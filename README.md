@@ -21,7 +21,7 @@ Steps:
 ## Minimal requirements: 
 - Python >= 3.9 
 - some NVidia GPU with CUDA installed
-- > 32Gb memory
-- > 1Tb of the free space, those checkpoints are Yuge!
+- 32Gb memory
+- 1Tb of the free space, those checkpoints are Yuge!
  
 

@@ -7,7 +7,7 @@ Steps:
 2. when downloaded you'll find the "api" folder that comes along with model checkpoints:
  
 
-![like this](/home/bo/Pictures/api_folder.png)
+![like this](/media//api_folder.png)
 
 3. Download [slowLlama.py](/models/llama3_1/api/slowLlama.py) and place it into the api folder.
 4. Run slowLlama.py

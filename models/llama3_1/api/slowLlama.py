@@ -137,10 +137,7 @@ def sample_top_p(probs, p):
     next_token = torch.gather(probs_idx, -1, next_token)
     return next_token
 
-
-if __name__ == "__main__":
-    device = torch.device("cuda:1")
-    base_path, checkpoint_path = ensure_path()
+def fix_model_module():
     mdspec = importlib.util.find_spec("model", "llama_models.llama3_1.api")
     source = mdspec.loader.get_source("model")
     new_source = source.replace("from .args import ModelArgs", "from args import ModelArgs")
@@ -151,6 +148,11 @@ if __name__ == "__main__":
     codeobj = compile(new_source, md.__spec__.origin, 'exec')
     exec(codeobj, md.__dict__)
     sys.modules["model"] = md
+    return md
+
+if __name__ == "__main__":
+    device = torch.device("cuda:1")
+    base_path, checkpoint_path = ensure_path()
     temperature = 0.75
     top_p = 0.9
     prompt = input("Enter thy question: ")
@@ -162,6 +164,7 @@ if __name__ == "__main__":
     len_msg = len(msg)
     tokenizer = tokenizer.Tokenizer(os.path.join(checkpoint_path, "tokenizer.model"))
     t = torch.tensor(tokenizer.encode(msg, bos=True, eos=True)).view(1,-1).to(device)
+    md = fix_model_module()
     args = get_ModelArgs(checkpoint_path)
     llama = md.Transformer(args).to(device)
     register_loadables(base_path, checkpoint_path, llama)

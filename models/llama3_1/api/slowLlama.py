@@ -40,24 +40,42 @@ def get_ModelArgs(checkpoint_paths:str=None):
     args.max_batch_size = 1
     return args
 
+def extract_checkpoints(checkpoint_path:str, base_path:str):
+    checkpoints = [os.path.join(checkpoint_path, file_name) for file_name in os.listdir(checkpoint_path) if file_name.startswith("consolidated")]
+    for checkpoint_file in tqdm(checkpoints, desc="Extracting checkpoints"):
+        checkpoint_id = int(checkpoint_file.split(".")[-2])
+        checkpoint = torch.load(checkpoint_file, map_location="cpu")
+        for key, t in checkpoint.items():
+            dic_path = os.path.join(base_path, f"{key}.dic")
+            if os.path.exists(dic_path):
+                dic = torch.load(dic_path)
+                dic[checkpoint_id] = t
+                torch.save(dic, dic_path)
+            else:
+                torch.save({checkpoint_id: t}, dic_path)
+        del checkpoint
+
 def read_weight(base_path:str, checkpoint_path:str, weight_name:str, parallel:bool=False, parallel_dim:int=0):
     _name = f"{weight_name}.weight"
     fname = os.path.join(base_path, f"{_name}.pt")
     if os .path.exists(fname):
         weight = torch.load(fname)
     else:
-        print(f"Reading {weight_name} from checkpoints the first time")
+        dicname = os.path.join(base_path, f"{_name}.dic")
+        if not os.path.exists(dicname):            
+            print(f"Have to process checkpoints the first time")
+            extract_checkpoints(checkpoint_path, base_path)  
+            print("Done processing checkpoints")
+            print("Compiling weights the first time. Going to be faster after that, please stand by...")      
+        dic = torch.load(dicname)
+        keys = sorted(dic.keys())        
         weights = []
-        checkpoints = [os.path.join(checkpoint_path, file_name) for file_name in os.listdir(checkpoint_path) if file_name.startswith("consolidated")]
-        if parallel:
-            checkpoints = tqdm(checkpoints, desc="Reading checkpoints")
-        for checkpoint_file in checkpoints:
-            checkpoint = torch.load(checkpoint_file, map_location="cpu")
-            if _name in checkpoint:
-                weights.append(checkpoint[_name].clone())
-                if not parallel:
-                    break
-            del checkpoint
+        for key in keys:
+            weights.append(dic[key].clone())                                                
+            if not parallel:
+                break            
+        del dic 
+        os.remove(dicname)        
         weight = torch.cat(weights, dim=parallel_dim) if parallel else weights[0]
         torch.save(weight, fname)
     size = os.path.getsize(fname)    

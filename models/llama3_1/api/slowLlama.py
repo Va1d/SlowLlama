@@ -25,21 +25,6 @@ class fs_init:
     def get_model_parallel_world_size():
         return 1
     
-def ensure_path():
-    checkpoint_path = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), MODEL)
-    base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), BASE_PATH)
-    assert os.path.exists(checkpoint_path), "Invalid Model Path"    
-    if not os.path.exists(base_path):
-        os.mkdir(base_path)
-    return base_path, checkpoint_path
-    
-def get_ModelArgs(checkpoint_paths:str=None):
-    with open(f"{checkpoint_paths}/params.json", "r") as f:
-        args = ModelArgs(**json.load(f))
-    args.world_size = 1
-    args.max_batch_size = 1
-    return args
-
 def extract_checkpoints(checkpoint_path:str, base_path:str):
     checkpoints = [os.path.join(checkpoint_path, file_name) for file_name in os.listdir(checkpoint_path) if file_name.startswith("consolidated")]
     for checkpoint_file in tqdm(checkpoints, desc="Extracting checkpoints"):
@@ -54,6 +39,26 @@ def extract_checkpoints(checkpoint_path:str, base_path:str):
             else:
                 torch.save({checkpoint_id: t}, dic_path)
         del checkpoint
+        
+def ensure_path():
+    checkpoint_path = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), MODEL)
+    base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), BASE_PATH)
+    assert os.path.exists(checkpoint_path), "Invalid Model Path"    
+    if not os.path.exists(base_path):
+        os.mkdir(base_path)
+        print(f"Have to process checkpoints the first time")
+        extract_checkpoints(checkpoint_path, base_path)  
+        print("Done processing checkpoints")
+    return base_path, checkpoint_path
+    
+def get_ModelArgs(checkpoint_paths:str=None):
+    with open(f"{checkpoint_paths}/params.json", "r") as f:
+        args = ModelArgs(**json.load(f))
+    args.world_size = 1
+    args.max_batch_size = 1
+    return args
+
+
 
 def read_weight(base_path:str, checkpoint_path:str, weight_name:str, parallel:bool=False, parallel_dim:int=0):
     _name = f"{weight_name}.weight"
@@ -61,12 +66,8 @@ def read_weight(base_path:str, checkpoint_path:str, weight_name:str, parallel:bo
     if os .path.exists(fname):
         weight = torch.load(fname)
     else:
-        dicname = os.path.join(base_path, f"{_name}.dic")
-        if not os.path.exists(dicname):            
-            print(f"Have to process checkpoints the first time")
-            extract_checkpoints(checkpoint_path, base_path)  
-            print("Done processing checkpoints")
-            print("Compiling weights the first time. Going to be faster after that, please stand by...")      
+        assert os.path.exists(os.path.join(base_path, f"{_name}.dic")), f"Weight not found: {fname}"
+        dicname = os.path.join(base_path, f"{_name}.dic")    
         dic = torch.load(dicname)
         keys = sorted(dic.keys())        
         weights = []
@@ -81,6 +82,12 @@ def read_weight(base_path:str, checkpoint_path:str, weight_name:str, parallel:bo
     size = os.path.getsize(fname)    
     return weight, size
 
+class TheAnswer:
+    content:str = ""
+    @classmethod
+    def display(cls, layer_id:int=0):
+        print(f"{layer_id: >3}/126 The Answer: {cls.content}\r", end="")
+
 class Loadable(nn.Module):
     def __init__(self, parallel:bool=False, parallel_dim:int=0):
         super().__init__()
@@ -93,6 +100,9 @@ class Loadable(nn.Module):
         self._archor = nn.Parameter(torch.tensor(0.0))
     def weight(self):
         assert self.name is not None, "Module is not registered"
+        if self.name.startswith("layers"):
+            layer_id = int(self.name.split(".")[1])                             
+            TheAnswer.display(layer_id)        
         if not self._weight is None:
             return self._weight
         _weight, _size = read_weight(self.base_folder, self.checkpoint_folder, self.name, self.parallel, self.parallel_dim)
@@ -186,8 +196,7 @@ if __name__ == "__main__":
     args = get_ModelArgs(checkpoint_path)
     llama = md.Transformer(args).to(device)
     register_loadables(base_path, checkpoint_path, llama)
-    prev_pos = 0
-    first_time = True
+    prev_pos = 0    
     for cur_pos in range(t.shape[1], 2048,1):
         tt = t[:, prev_pos:cur_pos]
         logits = llama(tt, prev_pos)
@@ -202,8 +211,5 @@ if __name__ == "__main__":
         t = torch.tensor(t).view(1,-1).to(device)
         prev_pos = cur_pos
         response = tokenizer.decode([next_token])
-        if first_time:
-            print("The Answer:", end="")            
-            first_time = False
-        print(response, end="")  
-
+        TheAnswer.content += response
+        TheAnswer.display()
